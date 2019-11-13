@@ -393,54 +393,27 @@ bool ConvertInputToOFX(HWND hWnd) {
     std::wstring wide = &buf[0];
     std::string s(wide.begin(), wide.end());
 
-    // Remove any lines that don't contain XML objects.
-    // This could remove a value that spans multiple lines.
-    // It's a risk we take. Also, the XML can be badly formed, so our check for
-    // "xml" will be extremely simple: the presence of '<' or '>' on a line!
-    //
+    // Remove anything before <OFX> - it's junk to Money or headers that can
+    // be replaced. Some banks, i.e. Wells Fargo, jam everything into one line.
     // std::regex's search and match have memory issues with long lines, so
     // that's why this logic is very simple - to avoid using that library.
     std::istringstream ss(s);
     std::string line;
-    bool hasXMLHeader = false;
-    bool hasXMLOFXHeader = false;
+    // First, look for the start of <OFX>
     while (std::getline(ss, line)) {
-        std::size_t leftChevron = line.find('<');
-        std::size_t rightChevron = line.find('>');
-        if (leftChevron != std::string::npos &&
-            rightChevron != std::string::npos &&
-            rightChevron > leftChevron) {
-            polishedText += line + "\n";
+        std::size_t start = line.find("<OFX>");
+        if (start != std::string::npos) {
+            polishedText += line.substr(start, std::string::npos);
+            break;
         }
     }
+    // Now append the rest
+    while (std::getline(ss, line)) {
+        polishedText += line + "\n";
+    }
 
-    // Check if the required headers are at the top, in order.
-    std::istringstream pss(polishedText);
-    std::regex xmlHeaderRegex(
-        std::regex("^\\s*<\\s*\\?\\s*xml .*>\\s*$",
-            std::regex_constants::icase));
-    std::regex xmlOFXHeaderRegex(
-        std::regex("^\\s*<\\s*\\?\\s*OFX .*>\\s*$",
-            std::regex_constants::icase));
-    if (std::getline(pss, line, '\n') &&
-        std::regex_match(line, xmlHeaderRegex)) {
-        // first line has XML header
-        hasXMLHeader = true;
-    }
-    if (std::getline(pss, line, '\n') &&
-        std::regex_match(line, xmlOFXHeaderRegex)) {
-        // second line has OFX XML header
-        hasXMLOFXHeader = true;
-    }
-    if (!hasXMLHeader || !hasXMLOFXHeader) {
-        // This doesn't cover the case where the headers are out of order, or
-        // just one is present. For now, we ignore that as a rare, 
-        // not likely to occur condition.
-        // Even if the header lines are duplicated, Money doesn't complain.
-        // It cares only if they're missing!
-        polishedText = XML_HEADER + "\n" + XML_OFX_HEADER + "\n" +
-            polishedText;
-    }
+    // Add OFX XML-style headers. Version may be wrong, but Money doesn't care.
+    polishedText = XML_HEADER + "\n" + XML_OFX_HEADER + "\n" + polishedText;
 
     // Convert text to an XML object
     tinyxml2::XMLDocument doc;
@@ -472,8 +445,8 @@ bool ConvertInputToOFX(HWND hWnd) {
         doc.Parse(inxml);
         if (doc.ErrorID() != 0) {
             std::string msg = "Could not fix the XML. This XML either needs "
-                " to be fixed at the source, or this program needs extra "
-                " modifications to handle the XML.\n\nParser error message: ";
+                "to be fixed at the source, or this program needs extra "
+                "modifications to handle the XML.\n\nParser error message: ";
             msg += std::to_string(doc.ErrorID()) + ":\n";
             msg += doc.ErrorStr();
             MessageBoxA(NULL,
@@ -946,9 +919,9 @@ void SendToMoneyImportHandler(HWND hWnd) {
 // This change does not persist, so one improvement is to persist the value.
 void ChangeImportHandlerLocation(HWND hWnd) {
     std::string msg = "Select a different location for mnyimprt.exe. You will "
-        "need to do this every time you use this program, as the new location is "
-        "NOT saved. I recommend you manually create the folder structure and copy "
-        "mnyimprt.exe to: "
+        "need to do this every time you use this program, as the new location "
+        "is NOT saved. I recommend you manually create the folder structure "
+        "and copy mnyimprt.exe to: "
         "C:\\Program Files(x86)\\Microsoft Money Plus\\MNYCoreFiles\\mnyimprt.exe";
     MessageBoxA(hWnd,
         msg.c_str(),

@@ -9,7 +9,7 @@ This project requires the following dependencies:
 * TinyXML-2: https://github.com/leethomason/tinyxml2
 
 
-# How to Build (Details Step by Step Instructions)
+# How to Build (Detailed Step by Step Instructions)
 
 1) First, install Visual Studio Community 2019, and make sure you install the Windows 10 SDK.
 
@@ -38,7 +38,7 @@ To sign the EXE, one must perform the following:
     * `$CertPassword = ConvertTo-SecureString -String "PASSWORD" -Force –AsPlainText`
     * `Export-PfxCertificate -Cert "cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath "c:\selfsigncert.pfx" -Password $CertPassword`
 
-2) Sign: C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool>signtool.exe sign "C:\Users\username\Source\Repos\ConvertToOFX\Release\ConvertToOFX.exe"
+2) Sign: `C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool>signtool.exe sign "C:\Users\username\Source\Repos\ConvertToOFX\Release\ConvertToOFX.exe"`
 
 3) Make a backup copy of c:\selfsigncert.pfx and the PASSWORD you used. In the future, you will only need to run step 2 to sign new binaries.
 
@@ -47,7 +47,7 @@ To sign the EXE, one must perform the following:
 These are features I want to add but did not get a chance to. Maybe one day:
 * Find a way to persist changes to the location of the Money Import Handler (maybe use an INI file?). Right now, the user must change the location manually every time.
 * Check if there is a new version available and let the user know to update.
-** The problem I ran into here was that I want to do it asynchronously. The Async HTTP code is horrible. I worried that I would introduce crash conditions with such code. I scrapped it because this is not vital functionality and the risks were worse than the benefits.
+  * The problem I ran into here was that I want to do it asynchronously. The Async HTTP code is horrible. I worried that I would introduce crash conditions with such code. I scrapped it because this is not vital functionality and the risks were worse than the benefits.
 * Add an option to convert XML tags to uppercase (and persist that option)
 * Add logic to run this from the command prompt and disable all MessageBox prompts (like a "batch" mode)
 * Add parsing for other statement types. Need to investigate what types Money supports.
@@ -60,4 +60,4 @@ These are features I want to add but did not get a chance to. Maybe one day:
 I used Azure Credits to develop this since I don't have a Windows machine that can run Visual Studio. I used a B2S VM (Currently: $0.0496/hr) and a 128 GB Standard HDD disk (Type S10, $5.888/month). The B1S VM is too slow. Total Cost reported by Azure: $3.74.
 * Storage breakdown: $2.96: Implies 1/2 month of usage, which is accurate.
   * I could have used a smaller 32 GB disk for this project.
-* VM breakdown: $0.78: Implies 15 hours of usage. This does not look accurate. If I had 90 hours of usage, I'd expect cost to be 90*$0.0496: $4.47
+* VM breakdown: $0.78: Implies 15 hours of usage. This does not look accurate. If I had 90 hours of usage, I'd expect cost to be `90*$0.0496=`: $4.47

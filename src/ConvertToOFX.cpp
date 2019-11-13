@@ -73,14 +73,17 @@ const std::string XML_HEADER =
 const std::string XML_OFX_HEADER = 
     "<?OFX OFXHEADER=\"200\" VERSION=\"202\" SECURITY=\"NONE\" "
     "OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\" ?>";
+// Allowed child elements under <STMTTRN> fields. Everything else gets deleted.
 const std::set<std::string> STMTTRN_WHITELIST{ "TRNTYPE", "DTPOSTED", "TRNAMT", 
     "FITID", "CHECKNUM", "NAME", "MEMO", "CCACCTTO", "DTUSER" };
+// Where to find the <BANKTRANLIST> for a Message Set Type 
 std::map<std::string, std::vector<std::string>> TYPE_TO_BANKTRANLIST_MAP = {
     {"CREDITCARDMSGSRSV1",
         {"OFX", "CREDITCARDMSGSRSV1", "CCSTMTTRNRS", "CCSTMTRS", "BANKTRANLIST"}},
     {"BANKMSGSRSV1",
         {"OFX", "BANKMSGSRSV1",       "STMTTRNRS",   "STMTRS",   "BANKTRANLIST"}},
 };
+bool dedupeMemoField = true;
 
 // Attempt to fix the imbalanced input into well-formatted XML.
 std::string FixXML(const std::string& input) {
@@ -257,6 +260,17 @@ void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
                 stmttrn->DeleteChild(currentChild);
             }
         }
+
+	if (dedupeMemoField) {
+            // If <NAME> == <MEMO>, then delete MEMO field.
+	    // Personally, I hate when this gets duplicated. Waste of space!
+            tinyxml2::XMLElement* name = stmttrn->FirstChildElement("NAME");
+            tinyxml2::XMLElement* memo = stmttrn->FirstChildElement("MEMO");
+	    if (name && memo && (name->Value() == memo->Value())) {
+                stmttrn->DeleteChild(memo);
+	    }
+	}
+
         stmttrn = stmttrn->NextSiblingElement("STMTTRN");
     }
 }

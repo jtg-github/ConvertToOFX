@@ -1,13 +1,13 @@
 // compile with: /D_UNICODE /DUNICODE /DWIN32 /D_WINDOWS /c
 
 /******************************************************************************
-* This program attempts to convert data into an OFX file that 
-* Microsoft Money can properly read. Currently, it only supports QFX files 
+* This program attempts to convert data into an OFX file that
+* Microsoft Money can properly read. Currently, it only supports QFX files
 * (also known as Quicken files or Quicken Web Connect files), which are already
 * somewhat closely related to the OFX files that Money can read.
 *
-* At a high level, this program works by removing extra elements from the 
-* Transaction sections of the Quicken file. MS Money would otherwise choke on 
+* At a high level, this program works by removing extra elements from the
+* Transaction sections of the Quicken file. MS Money would otherwise choke on
 * these elements.
 *
 * The Win32 API is ugly. This is also my first Win32 program. Hello World!
@@ -41,7 +41,8 @@
 #define ID_HELP_ONLINE 5
 #define ID_HELP_ABOUT 6
 #define ID_HELP_PRIVACY_NOTICE 7
-#define ID_ACTIONS_CHANGE_IMPORT_HANDLER_LOCATION 8
+#define ID_CONFIG_CHANGE_IMPORT_HANDLER_LOCATION 8
+#define ID_CONFIG_DEDUPE_MEMO 9
 
 #define IDC_MAIN_EDIT 101
 #define IDC_OFX_EDIT 102
@@ -53,13 +54,13 @@
 std::wstring VERSION_ID = L"1";
 static TCHAR szWindowClass[] = _T("ConvertToOFX");  // main window class name
 static TCHAR szTitle[] = _T("ConvertToOFX");
-const wchar_t INPUT_DEFAULT_TEXT[] = 
-    L"Open a file to display text here.\r\n\r\n"
-    "Currently, only QFX files are supported.";
-const wchar_t OFX_DEFAULT_TEXT[] = 
-    L"OFX Output will appear here after input is converted.";
-static std::wstring IMPORT_HANDLER_EXE = 
-    L"C:\\Program Files (x86)\\Microsoft Money Plus\\MNYCoreFiles\\mnyimprt.exe";
+const wchar_t INPUT_DEFAULT_TEXT[] =
+L"Open a file to display text here.\r\n\r\n"
+"Currently, only QFX files are supported.";
+const wchar_t OFX_DEFAULT_TEXT[] =
+L"OFX Output will appear here after input is converted.";
+static std::wstring IMPORT_HANDLER_EXE =
+L"C:\\Program Files (x86)\\Microsoft Money Plus\\MNYCoreFiles\\mnyimprt.exe";
 const wchar_t privacyMessage[] =
 L"GDPR Privacy Notice: This program does not collect any financial data. "
 "The only data it collects is related to usage: We want to identify how "
@@ -68,13 +69,13 @@ L"GDPR Privacy Notice: This program does not collect any financial data. "
 // For the headers, spacing matters! I've observed some files not getting 
 // accepted because of spacing before and after an '='! Very strange, but
 // this is Windows so it shouldn't be surprising.
-const std::string XML_HEADER = 
-    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>";
-const std::string XML_OFX_HEADER = 
-    "<?OFX OFXHEADER=\"200\" VERSION=\"202\" SECURITY=\"NONE\" "
-    "OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\" ?>";
+const std::string XML_HEADER =
+"<?xml version=\"1.0\" encoding=\"utf-8\" ?>";
+const std::string XML_OFX_HEADER =
+"<?OFX OFXHEADER=\"200\" VERSION=\"202\" SECURITY=\"NONE\" "
+"OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\" ?>";
 // Allowed child elements under <STMTTRN> fields. Everything else gets deleted.
-const std::set<std::string> STMTTRN_WHITELIST{ "TRNTYPE", "DTPOSTED", "TRNAMT", 
+const std::set<std::string> STMTTRN_WHITELIST{ "TRNTYPE", "DTPOSTED", "TRNAMT",
     "FITID", "CHECKNUM", "NAME", "MEMO", "CCACCTTO", "DTUSER" };
 // Where to find the <BANKTRANLIST> for a Message Set Type 
 std::map<std::string, std::vector<std::string>> TYPE_TO_BANKTRANLIST_MAP = {
@@ -141,18 +142,20 @@ std::string FixXML(const std::string& input) {
                     fixedXML += value + "</" + topOfStackRawValue + ">";
                     value = "";
                     topOfStack = tagStack.back();
-                    topOfStackRawValue = topOfStack.substr(1, 
+                    topOfStackRawValue = topOfStack.substr(1,
                         topOfStack.length() - 2);
                     tagStack.pop_back();
                 }
                 fixedXML += value + tag;
                 value = tag = "";
-            } else if (tag.find("/>") == tag.length() - 2 || tag.find("<?") == 0) {
+            }
+            else if (tag.find("/>") == tag.length() - 2 || tag.find("<?")==0) {
                 // Self contained tag. Write it out directly. Nothing to 
                 // balance here.
                 fixedXML += value + tag;
                 value = tag = "";
-            } else {
+            }
+            else {
                 // This is an opening tag, e.g. <tag>
                 if (value.length() > 0) {
                     // We have a value. This value is associated with the item 
@@ -163,14 +166,14 @@ std::string FixXML(const std::string& input) {
                         // This XML is so bad we can't fix it.
                         // Give up. The user will get a message
                         // later when this XML fails to parse.
-                        fixedXML = 
+                        fixedXML =
                             "No XML tag to match value with. Giving up. XML:\n"
                             + fixedXML;
                         return fixedXML;
                     }
                     std::string topOfStack = tagStack.back();
                     tagStack.pop_back();
-                    std::string prevTagRawValue = topOfStack.substr(1, 
+                    std::string prevTagRawValue = topOfStack.substr(1,
                         topOfStack.length() - 2);
                     fixedXML += value + "</" + prevTagRawValue + ">" + tag;
                 }
@@ -186,7 +189,8 @@ std::string FixXML(const std::string& input) {
             // We've processed a tag. If we encounter a character later, it 
             // belongs to a value and not an XML tag.
             processTag = false;
-        } else if (c == '<') {
+        }
+        else if (c == '<') {
             // We are going to process an XML element
             assert(tag.length() == 0);
             tag += c;
@@ -195,10 +199,12 @@ std::string FixXML(const std::string& input) {
             if (value.length() > 1) {
                 value.erase(value.find_last_not_of(" ") + 1);
             }
-        } else if (processTag) {
+        }
+        else if (processTag) {
             // Continue processing this character as an XML element
             tag += c;
-        } else {
+        }
+        else {
             // We are processing a value, not an XML element
             if (value.length() == 0 && (isspace(c))) {
                 // Ignore leading (left-side) whitespace
@@ -216,8 +222,8 @@ std::string FixXML(const std::string& input) {
     for (int i = tagStack.size() - 1; i >= 0; --i) {
         std::string topOfStack = tagStack.back();
         tagStack.pop_back();
-        std::string tagRawValue = topOfStack.substr(1, 
-                                                    topOfStack.length() - 2);
+        std::string tagRawValue = topOfStack.substr(1,
+            topOfStack.length() - 2);
         fixedXML += "</" + tagRawValue + ">";
     }
     return fixedXML;
@@ -255,21 +261,22 @@ void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
         while (child) {  // For every child element under STMTTRN
             tinyxml2::XMLNode* currentChild = child;
             child = child->NextSibling();
-            if (STMTTRN_WHITELIST.find(currentChild->Value()) == 
-                    STMTTRN_WHITELIST.end()) {
+            if (STMTTRN_WHITELIST.find(currentChild->Value()) ==
+                STMTTRN_WHITELIST.end()) {
                 stmttrn->DeleteChild(currentChild);
             }
         }
 
-	if (dedupeMemoField) {
+        if (dedupeMemoField) {
             // If <NAME> == <MEMO>, then delete MEMO field.
-	    // Personally, I hate when this gets duplicated. Waste of space!
+            // Personally, I hate when this gets duplicated. Waste of space!
             tinyxml2::XMLElement* name = stmttrn->FirstChildElement("NAME");
             tinyxml2::XMLElement* memo = stmttrn->FirstChildElement("MEMO");
-	    if (name && memo && (name->Value() == memo->Value())) {
+            if (name && memo && name->GetText() && memo->GetText() && 
+                (strcmp(name->GetText(), memo->GetText()) == 0)) {
                 stmttrn->DeleteChild(memo);
-	    }
-	}
+            }
+        }
 
         stmttrn = stmttrn->NextSiblingElement("STMTTRN");
     }
@@ -309,11 +316,11 @@ bool isXMLBalanced(const std::string& xml) {
                 if (topOfStackRawValue != tagRawValue) {
                     // The top of the stack does not match this closing tag. 
                     // Therefore, XML is unbalanced.
-                    return false;	
+                    return false;
                 }
                 value = tag = "";  // tags match. close out tag and value vars.
             }
-            else if (tag.find("/>") == tag.length() - 2 || tag.find("<?") == 0) {
+            else if (tag.find("/>") == tag.length() - 2 || tag.find("<?")==0) {
                 // Self contained tag. Nothing to balance here.
                 value = tag = "";
                 processTag = false;
@@ -363,9 +370,9 @@ bool isXMLBalanced(const std::string& xml) {
     return true;
 }
 
-void SetOfxWindowDebugText(HWND hWnd, const std::string& xml) { 
+void SetOfxWindowDebugText(HWND hWnd, const std::string& xml) {
     HWND hOfxEdit = GetDlgItem(hWnd, IDC_OFX_EDIT);
-    std::string text = 
+    std::string text =
         "This text is invalid and only for debugging purposes!"
         "\r\n\r\n" + xml;
     SetWindowTextA(hOfxEdit, text.c_str());
@@ -375,7 +382,7 @@ void SetOfxWindowDebugText(HWND hWnd, const std::string& xml) {
 // a MS Money-acceptable OFX format.
 bool ConvertInputToOFX(HWND hWnd) {
     // Polish the input text before converting into OFX-happy XML.
-    std::string polishedText;  
+    std::string polishedText;
 
     // First, get the input from the main window and shove into a ANSI string
     HWND hEdit = GetDlgItem(hWnd, IDC_MAIN_EDIT);
@@ -400,8 +407,8 @@ bool ConvertInputToOFX(HWND hWnd) {
     while (std::getline(ss, line)) {
         std::size_t leftChevron = line.find('<');
         std::size_t rightChevron = line.find('>');
-        if (leftChevron != std::string::npos && 
-            rightChevron != std::string::npos && 
+        if (leftChevron != std::string::npos &&
+            rightChevron != std::string::npos &&
             rightChevron > leftChevron) {
             polishedText += line + "\n";
         }
@@ -410,17 +417,17 @@ bool ConvertInputToOFX(HWND hWnd) {
     // Check if the required headers are at the top, in order.
     std::istringstream pss(polishedText);
     std::regex xmlHeaderRegex(
-        std::regex("^\\s*<\\s*\\?\\s*xml .*>\\s*$", 
-                   std::regex_constants::icase));
+        std::regex("^\\s*<\\s*\\?\\s*xml .*>\\s*$",
+            std::regex_constants::icase));
     std::regex xmlOFXHeaderRegex(
-        std::regex("^\\s*<\\s*\\?\\s*OFX .*>\\s*$", 
-                   std::regex_constants::icase));
-    if (std::getline(pss, line, '\n') && 
+        std::regex("^\\s*<\\s*\\?\\s*OFX .*>\\s*$",
+            std::regex_constants::icase));
+    if (std::getline(pss, line, '\n') &&
         std::regex_match(line, xmlHeaderRegex)) {
         // first line has XML header
         hasXMLHeader = true;
     }
-    if (std::getline(pss, line, '\n') && 
+    if (std::getline(pss, line, '\n') &&
         std::regex_match(line, xmlOFXHeaderRegex)) {
         // second line has OFX XML header
         hasXMLOFXHeader = true;
@@ -431,7 +438,7 @@ bool ConvertInputToOFX(HWND hWnd) {
         // not likely to occur condition.
         // Even if the header lines are duplicated, Money doesn't complain.
         // It cares only if they're missing!
-        polishedText = XML_HEADER + "\n" + XML_OFX_HEADER + "\n" + 
+        polishedText = XML_HEADER + "\n" + XML_OFX_HEADER + "\n" +
             polishedText;
     }
 
@@ -442,23 +449,24 @@ bool ConvertInputToOFX(HWND hWnd) {
 
     // Check if the elements are balanced. TinyXML is not always 100% correct
     // (sometimes give success / code 0 for broken XML. So we also check again.
-    if (doc.ErrorID() == 14 || 
+    if (doc.ErrorID() == 14 ||
         (doc.ErrorID() == 0 && !isXMLBalanced(polishedText))) {
         // Mis-matched brackets. Let's attempt to fix it, 
         // but inform the user first.
         std::string msg;
         if (doc.ErrorID() == 14) {
             msg = "Input XML does not have matching brackets according to the "
-                  "XML Parser. Will attempt to fix it!\n\n"
-                  "XML Parser Error Message: ";
+                "XML Parser. Will attempt to fix it!\n\n"
+                "XML Parser Error Message: ";
             msg += doc.ErrorStr();
-        } else {
+        }
+        else {
             msg = "Input XML appears to be unbalanced. Will try to fix it!";
         }
-        MessageBoxA(NULL, 
-                    msg.c_str(), 
-                    "FYI: XML is unbalanced", 
-                    MB_OK | MB_ICONWARNING);
+        MessageBoxA(NULL,
+            msg.c_str(),
+            "FYI: XML is unbalanced",
+            MB_OK | MB_ICONWARNING);
         std::string fixedXML = FixXML(polishedText);
         inxml = fixedXML.c_str();
         doc.Parse(inxml);
@@ -468,22 +476,23 @@ bool ConvertInputToOFX(HWND hWnd) {
                 " modifications to handle the XML.\n\nParser error message: ";
             msg += std::to_string(doc.ErrorID()) + ":\n";
             msg += doc.ErrorStr();
-            MessageBoxA(NULL, 
-                        msg.c_str(), 
-                        "Error Parsing XML Again",
-                        MB_OK | MB_ICONSTOP);
+            MessageBoxA(NULL,
+                msg.c_str(),
+                "Error Parsing XML Again",
+                MB_OK | MB_ICONSTOP);
             SetOfxWindowDebugText(hWnd, inxml);
             return false;
         }
-    } else if (doc.ErrorID() != 0) {
-        std::string msg = 
+    }
+    else if (doc.ErrorID() != 0) {
+        std::string msg =
             "Parser Error when processing XML. Cannot continue: ";
         msg += std::to_string(doc.ErrorID()) + ":\n";
         msg += doc.ErrorStr();
-        MessageBoxA(NULL, 
-                    msg.c_str(),
-                    "Error Parsing XML",
-                    MB_OK | MB_ICONERROR);
+        MessageBoxA(NULL,
+            msg.c_str(),
+            "Error Parsing XML",
+            MB_OK | MB_ICONERROR);
         SetOfxWindowDebugText(hWnd, inxml);
         return false;
     }
@@ -491,10 +500,10 @@ bool ConvertInputToOFX(HWND hWnd) {
     // Determine if this is a CreditCard statement or a Bank statement.
     tinyxml2::XMLElement* ofxRoot = doc.FirstChildElement("OFX");
     if (!ofxRoot) {
-        MessageBoxA(NULL, 
-                    "OFX is missing <OFX> element at the root. Cannot parse.",
-                    "Error Parsing XML", 
-                    MB_OK);
+        MessageBoxA(NULL,
+            "OFX is missing <OFX> element at the root. Cannot parse.",
+            "Error Parsing XML",
+            MB_OK);
         SetOfxWindowDebugText(hWnd, inxml);
         return false;
     }
@@ -511,7 +520,7 @@ bool ConvertInputToOFX(HWND hWnd) {
     if (docHandle.FirstChildElement("OFX").
         FirstChildElement("CREDITCARDMSGSRSV1").ToElement()) {
         // We have a Credit Card Statement
-        statementTypes.push_back("CREDITCARDMSGSRSV1");  
+        statementTypes.push_back("CREDITCARDMSGSRSV1");
     }
     if (docHandle.FirstChildElement("OFX").
         FirstChildElement("BANKMSGSRSV1").ToElement()) {
@@ -521,10 +530,10 @@ bool ConvertInputToOFX(HWND hWnd) {
 
     if (statementTypes.size() == 0) {
         // Error: Found zero statements
-        MessageBoxA(NULL, 
+        MessageBoxA(NULL,
             "OFX is missing valid elements under the <OFX> root (like "
-            "<CREDITCARDMSGSRSV1> or <BANKMSGSRSV1>). Cannot parse.", 
-            "Error Parsing XML", 
+            "<CREDITCARDMSGSRSV1> or <BANKMSGSRSV1>). Cannot parse.",
+            "Error Parsing XML",
             MB_OK);
         SetOfxWindowDebugText(hWnd, inxml);
         return false;
@@ -533,7 +542,7 @@ bool ConvertInputToOFX(HWND hWnd) {
     // Using the Statement Type as a key name, we lookup its expected 
     // <BANKTRANLIST> path from a map data structure.
     for (std::string& type : statementTypes) {
-        std::vector<std::string> pathToBanktranlist = 
+        std::vector<std::string> pathToBanktranlist =
             TYPE_TO_BANKTRANLIST_MAP[type];
         if (pathToBanktranlist.size() == 0) {
             MessageBoxA(NULL,
@@ -561,15 +570,15 @@ bool ConvertInputToOFX(HWND hWnd) {
                     fullPath += "<" + pathToBanktranlist[j] + ">";
                 }
                 std::string errorMsg = "Not modifiying " + type + " because "
-                    "we encountered problems locating this element: " + 
-                    pathToBanktranlist[i] + " in the path " + fullPath + 
+                    "we encountered problems locating this element: " +
+                    pathToBanktranlist[i] + " in the path " + fullPath +
                     ". We were expecting it to be present. This might be a "
                     "problem (or not, if it was purposely left out): inspect "
                     "the output to make sure you are okay with results.";
-                MessageBoxA(NULL, 
-                            errorMsg.c_str(), 
-                            "FYI: Possible Error", 
-                            MB_OK | MB_ICONINFORMATION);
+                MessageBoxA(NULL,
+                    errorMsg.c_str(),
+                    "FYI: Possible Error",
+                    MB_OK | MB_ICONINFORMATION);
                 break;
             }
         }
@@ -594,7 +603,8 @@ bool ConvertInputToOFX(HWND hWnd) {
     while (*p != '\0') {
         if (*p == '\n') {
             normalizedString += "\r\n";
-        } else {
+        }
+        else {
             normalizedString += *p;
         }
         ++p;
@@ -602,10 +612,10 @@ bool ConvertInputToOFX(HWND hWnd) {
     HWND hOfxEdit = GetDlgItem(hWnd, IDC_OFX_EDIT);
 
     if (s == normalizedString) {
-        MessageBoxA(NULL, 
-                    "FYI: Nothing changed after attempting to convert!",
-                    "FYI", 
-                    MB_OK | MB_ICONINFORMATION);
+        MessageBoxA(NULL,
+            "FYI: Nothing changed after attempting to convert!",
+            "FYI",
+            MB_OK | MB_ICONINFORMATION);
     }
     SetWindowTextA(hOfxEdit, normalizedString.c_str());
     return true;
@@ -613,42 +623,53 @@ bool ConvertInputToOFX(HWND hWnd) {
 
 // Create the Menu Bar
 void CreateMainMenu(HWND hWnd) {
-        HMENU hMenu = CreateMenu();
-        HMENU hFileSubMenu = CreatePopupMenu();
-        HMENU hActionsSubMenu = CreatePopupMenu();
-        HMENU hHelpSubMenu = CreatePopupMenu();
+    HMENU hMenu = CreateMenu();
+    HMENU hFileSubMenu = CreatePopupMenu();
+    HMENU hActionsSubMenu = CreatePopupMenu();
+    HMENU hConfigSubMenu = CreatePopupMenu();
+    HMENU hHelpSubMenu = CreatePopupMenu();
+    
+    AppendMenu(hMenu, MF_STRING | MF_POPUP,
+        (UINT)hFileSubMenu, _T("&File"));
+    AppendMenu(hMenu, MF_STRING | MF_POPUP,
+        (UINT)hActionsSubMenu, _T("OFX &Actions"));
+    AppendMenu(hMenu, MF_STRING | MF_POPUP,
+        (UINT)hConfigSubMenu, _T("Confi&g"));
+    AppendMenu(hMenu, MF_STRING | MF_POPUP,
+        (UINT)hHelpSubMenu, _T("&Help"));
 
-        AppendMenu(hMenu, MF_STRING | MF_POPUP,
-            (UINT)hFileSubMenu, _T("&File"));
-        AppendMenu(hMenu, MF_STRING | MF_POPUP,
-            (UINT)hActionsSubMenu, _T("OFX &Actions"));
-        AppendMenu(hMenu, MF_STRING | MF_POPUP,
-            (UINT)hHelpSubMenu, _T("&Help"));
+    AppendMenu(hFileSubMenu, MF_STRING, ID_FILE_OPEN,
+        _T("&Open File...\tALT+O"));
+    AppendMenu(hFileSubMenu, MF_STRING, ID_FILE_EXIT,
+        _T("E&xit"));
 
-        AppendMenu(hFileSubMenu, MF_STRING, ID_FILE_OPEN,
-            _T("&Open File...\tALT+O"));
-        AppendMenu(hFileSubMenu, MF_STRING, ID_FILE_EXIT,
-            _T("E&xit"));
+    AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_CONVERT_TO_OFX,
+        _T("&Convert To OFX\tALT+C"));
+    AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_SAVE_OFX,
+        _T("&Save OFX As...\tALT+S"));
+    AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_SEND_TO_MONEY,
+        _T("Send OFX To Money &Import Handler\tALT+I"));
 
-        AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_CONVERT_TO_OFX,
-            _T("&Convert To OFX\tALT+C"));
-        AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_SAVE_OFX,
-            _T("&Save OFX As...\tALT+S"));
-        AppendMenu(hActionsSubMenu, MF_STRING, ID_ACTIONS_SEND_TO_MONEY,
-            _T("Send OFX To Money &Import Handler\tALT+I"));
-        AppendMenu(hActionsSubMenu,
-            MF_STRING,
-            ID_ACTIONS_CHANGE_IMPORT_HANDLER_LOCATION,
-            _T("&Change Import Handler Location"));
+    AppendMenu(hConfigSubMenu,
+        MF_STRING,
+        ID_CONFIG_CHANGE_IMPORT_HANDLER_LOCATION,
+        _T("&Change Money Import Handler Location"));
+    AppendMenu(hConfigSubMenu,
+        MF_STRING,
+        ID_CONFIG_DEDUPE_MEMO,
+        _T("&Delete the MEMO field if identical to NAME field"));
 
-        AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_ONLINE,
-            _T("On-Line &Documentation"));
-        AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_PRIVACY_NOTICE,
-            _T("&Privacy Notice (GDPR)"));
-        AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_ABOUT,
-            _T("&About"));
+    AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_ONLINE,
+        _T("On-Line &Documentation"));
+    AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_PRIVACY_NOTICE,
+        _T("&Privacy Notice (GDPR)"));
+    AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_ABOUT,
+        _T("&About"));
 
-        SetMenu(hWnd, hMenu);
+    if (dedupeMemoField) {
+        CheckMenuItem(hConfigSubMenu, ID_CONFIG_DEDUPE_MEMO, MF_CHECKED);
+    }
+    SetMenu(hWnd, hMenu);
 }
 
 // After a user selects a file, load the contents into the input Text Box
@@ -665,9 +686,9 @@ void LoadFile(const PWSTR filename, HWND hWnd) {
                 // If the file is UTF-8 or Unicode, we need to convert it to
                 // Wide Characters. I can't get it working with Unicode yet.
                 std::string fileTxt(reinterpret_cast<const char*>(
-                                        fileByteArray), 
-                                    dwRead);
-                int num_chars = MultiByteToWideChar(CP_UTF8, 
+                    fileByteArray),
+                    dwRead);
+                int num_chars = MultiByteToWideChar(CP_UTF8,
                     MB_ERR_INVALID_CHARS, fileTxt.c_str(), fileTxt.length(),
                     NULL, 0);
                 std::wstring fileTxtWideChars;
@@ -675,38 +696,41 @@ void LoadFile(const PWSTR filename, HWND hWnd) {
                 if (num_chars) {
                     fileTxtWideChars.resize(num_chars);
                     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                        fileTxt.c_str(), fileTxt.length(), 
+                        fileTxt.c_str(), fileTxt.length(),
                         &fileTxtWideChars[0], num_chars)) {
                         SetWindowText(hEdit, fileTxtWideChars.c_str());
-                    } else {
-                        MessageBox(NULL, 
+                    }
+                    else {
+                        MessageBox(NULL,
                             L"Error reading characters in file. "
-                            "Maybe there is an invalid character?", 
-                            L"Error", 
+                            "Maybe there is an invalid character?",
+                            L"Error",
                             MB_OK | MB_ICONERROR);
                     }
-                } else {
+                }
+                else {
                     if (!SetWindowTextA(hEdit, fileTxt.c_str())) {
                         MessageBox(NULL, L"Error displaying text as ANSI.",
                             L"Error", MB_OK | MB_ICONERROR);
                     }
                 }
             }
-            delete[] fileByteArray;			
+            delete[] fileByteArray;
         }
         CloseHandle(hFile);
-    } else {
+    }
+    else {
         // User probably selected Cancel
-        MessageBox(NULL, 
-                   L"No File Selected.", 
-                   L"Warning: Nothing Selected", 
-                   MB_OK | MB_ICONWARNING);
+        MessageBox(NULL,
+            L"No File Selected.",
+            L"Warning: Nothing Selected",
+            MB_OK | MB_ICONWARNING);
     }
 }
 
 // Write out the contents of the OFX window to disk
 void WriteOutFile(const PWSTR filename, HWND hWnd) {
-    HANDLE hFile = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, NULL, 
+    HANDLE hFile = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, NULL,
         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     HWND hOfx = GetDlgItem(hWnd, IDC_OFX_EDIT);
 
@@ -731,14 +755,14 @@ PWSTR SaveFileWindow() {
         IFileSaveDialog* pFileSave;
 
         // Create the FileOpenDialog object.
-        hr = CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_ALL, 
+        hr = CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_ALL,
             IID_IFileSaveDialog, reinterpret_cast<void**>(&pFileSave));
         if (SUCCEEDED(hr)) {
 
-            const COMDLG_FILTERSPEC c_rgSaveTypes[] = 
-                {{L"OFX Files (*.ofx)",       L"*.ofx"}, };
-            hr = pFileSave->SetFileTypes(ARRAYSIZE(c_rgSaveTypes), 
-                                         c_rgSaveTypes);
+            const COMDLG_FILTERSPEC c_rgSaveTypes[] =
+            { {L"OFX Files (*.ofx)",       L"*.ofx"}, };
+            hr = pFileSave->SetFileTypes(ARRAYSIZE(c_rgSaveTypes),
+                c_rgSaveTypes);
             hr = pFileSave->SetFileTypeIndex(1);  // Uses 1-based index. groan.
             hr = pFileSave->SetDefaultExtension(L"ofx");
             // Show the Open dialog box.
@@ -748,8 +772,8 @@ PWSTR SaveFileWindow() {
                 IShellItem* pItem;
                 hr = pFileSave->GetResult(&pItem);
                 if (SUCCEEDED(hr)) {
-                    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, 
-                                               &pszFilePath);
+                    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH,
+                        &pszFilePath);
 
                     // Display the file name to the user.
                     if (SUCCEEDED(hr)) {
@@ -789,8 +813,8 @@ PWSTR OpenFileWindow() {
                 IShellItem* pItem;
                 hr = pFileOpen->GetResult(&pItem);
                 if (SUCCEEDED(hr)) {
-                    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, 
-                                               &pszFilePath);
+                    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH,
+                        &pszFilePath);
                     // Display the file name to the user.
                     if (SUCCEEDED(hr)) {
                         return pszFilePath;
@@ -822,10 +846,10 @@ void SendToMoneyImportHandler(HWND hWnd) {
     std::string inputText;
     int len = GetWindowTextLength(hOfx) + 1;
     if (len == 1) {
-        MessageBox(hWnd, 
-                   _T("OFX Text is empty. Nothing to Import!"),
-                   _T("Error"),
-                   MB_OK | MB_ICONERROR);
+        MessageBox(hWnd,
+            _T("OFX Text is empty. Nothing to Import!"),
+            _T("Error"),
+            MB_OK | MB_ICONERROR);
         return;
     }
     std::vector<wchar_t> buf(len);
@@ -833,10 +857,10 @@ void SendToMoneyImportHandler(HWND hWnd) {
     std::wstring wide = &buf[0];
     if (std::equal(buf.begin(), buf.end(), std::begin(OFX_DEFAULT_TEXT))) {
         MessageBox(hWnd,
-                   _T("OFX Text is not valid. "
-                      "The right text pane needs to be updated!"), 
-                   _T("Error"),
-                   MB_OK | MB_ICONERROR);
+            _T("OFX Text is not valid. "
+                "The right text pane needs to be updated!"),
+            _T("Error"),
+            MB_OK | MB_ICONERROR);
         return;
     }
     std::string ofxText(wide.begin(), wide.end());
@@ -849,10 +873,10 @@ void SendToMoneyImportHandler(HWND hWnd) {
     // Get the Temorary File Directory
     dwRetVal = GetTempPath(MAX_PATH, tmpFilePath);
     if (dwRetVal > MAX_PATH || (dwRetVal == 0)) {
-        MessageBox(hWnd, 
+        MessageBox(hWnd,
             _T("Error Getting Temporary File Path. Alternatively, you should "
-               "save the OFX data and open that file with the Money "
-               "Import Handler."),
+                "save the OFX data and open that file with the Money "
+                "Import Handler."),
             _T("Error"),
             MB_OK | MB_ICONERROR);
         return;
@@ -860,14 +884,14 @@ void SendToMoneyImportHandler(HWND hWnd) {
     // Get a Temporary File Name inside the temp directory
     dwRetVal = GetTempFileName(tmpFilePath,  // directory for tmp files
         _T("ofx"),  // temp file name prefix, only first 3 letters used! 
-        0,                 
+        0,
         tmpFileName);
     if (dwRetVal == 0) {
-        MessageBox(hWnd, 
+        MessageBox(hWnd,
             _T("Unable to get Temporary File Name. Alternatively, you should "
-               "save the OFX data and open that file with the Money Import "
-               "Handler"), 
-            _T("Error"), 
+                "save the OFX data and open that file with the Money Import "
+                "Handler"),
+            _T("Error"),
             MB_OK | MB_ICONERROR);
         return;
     }
@@ -890,10 +914,10 @@ void SendToMoneyImportHandler(HWND hWnd) {
     ShExecInfo.hInstApp = NULL;
     ShellExecuteEx(&ShExecInfo);
     // We want to wait before proceeding
-    WaitForSingleObject(ShExecInfo.hProcess, INFINITE); 
+    WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
     CloseHandle(ShExecInfo.hProcess);
 
-    int retVal = (int) ShExecInfo.hInstApp;
+    int retVal = (int)ShExecInfo.hInstApp;
     if (retVal == 2) {
         // Import Handler EXE was not found
         std::wstring errorMsg = L"Error: Do you need to change the location "
@@ -905,13 +929,13 @@ void SendToMoneyImportHandler(HWND hWnd) {
 
     // Finally, delete the temporary file if one was created
     if (!DeleteFile(tmpFileName)) {
-        std::wstring warnMsg = 
+        std::wstring warnMsg =
             L"Warning: Could not delete the temporary file. "
             "You may want to delete the file manually. File was created at: ";
         warnMsg += tmpFileName;
-        MessageBox(hWnd, 
-            warnMsg.c_str(), 
-            _T("Warning: Did Not Remove Temp File"), 
+        MessageBox(hWnd,
+            warnMsg.c_str(),
+            _T("Warning: Did Not Remove Temp File"),
             MB_OK | MB_ICONWARNING);
     }
 
@@ -922,10 +946,10 @@ void SendToMoneyImportHandler(HWND hWnd) {
 // This change does not persist, so one improvement is to persist the value.
 void ChangeImportHandlerLocation(HWND hWnd) {
     std::string msg = "Select a different location for mnyimprt.exe. You will "
-    "need to do this every time you use this program, as the new location is "
-    "NOT saved. I recommend you manually create the folder structure and copy "
-    "mnyimprt.exe to: "
-    "C:\\Program Files(x86)\\Microsoft Money Plus\\MNYCoreFiles\\mnyimprt.exe";
+        "need to do this every time you use this program, as the new location is "
+        "NOT saved. I recommend you manually create the folder structure and copy "
+        "mnyimprt.exe to: "
+        "C:\\Program Files(x86)\\Microsoft Money Plus\\MNYCoreFiles\\mnyimprt.exe";
     MessageBoxA(hWnd,
         msg.c_str(),
         "FYI",
@@ -953,12 +977,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CREATE: {
         GetClientRect(hWnd, &rcClient);
 
-         // Input / Source File window
+        // Input / Source File window
         hEdit = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", INPUT_DEFAULT_TEXT,
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE |
             ES_AUTOVSCROLL | ES_AUTOHSCROLL,
             0, 0, rcClient.right * 49 / 100,
-            rcClient.bottom - (5+28+5),
+            rcClient.bottom - (5 + 28 + 5),
             hWnd,
             (HMENU)IDC_MAIN_EDIT,
             GetModuleHandle(NULL),
@@ -969,34 +993,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 _T("Error"),
                 MB_OK | MB_ICONERROR);
         SendMessage(hEdit,
-                    WM_SETFONT,
-                    (WPARAM)GetStockObject(DEFAULT_GUI_FONT),
-                    MAKELPARAM(FALSE, 0));
+            WM_SETFONT,
+            (WPARAM)GetStockObject(DEFAULT_GUI_FONT),
+            MAKELPARAM(FALSE, 0));
         // Set the TextBox limit to 1 MB of TCHARs
         SendMessage(hEdit, EM_SETLIMITTEXT, (WPARAM)1000000, 0);
         SetFocus(hEdit);
 
         // Converted OFX Text window
         hEdit = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", OFX_DEFAULT_TEXT,
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | 
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE |
             ES_AUTOVSCROLL | ES_AUTOHSCROLL,
             (int)rcClient.right * 51 / 100,
             0,
-            (int)rcClient.right * 49 / 100, rcClient.bottom - (5+28+5), 
-            hWnd, 
-            (HMENU)IDC_OFX_EDIT, 
-            GetModuleHandle(NULL), 
+            (int)rcClient.right * 49 / 100, rcClient.bottom - (5 + 28 + 5),
+            hWnd,
+            (HMENU)IDC_OFX_EDIT,
+            GetModuleHandle(NULL),
             NULL);
         if (hEdit == NULL) {
             MessageBox(hWnd,
-                       _T("Could not create ofx edit box."),
-                       _T("Error"),
+                _T("Could not create ofx edit box."),
+                _T("Error"),
                 MB_OK | MB_ICONERROR);
         }
         SendMessage(hEdit,
-                    WM_SETFONT, 
-                    (WPARAM)GetStockObject(DEFAULT_GUI_FONT),
-                    MAKELPARAM(FALSE, 0));
+            WM_SETFONT,
+            (WPARAM)GetStockObject(DEFAULT_GUI_FONT),
+            MAKELPARAM(FALSE, 0));
         // Set the TextBox limit to 1 MB of TCHARs
         SendMessage(hEdit, EM_SETLIMITTEXT, (WPARAM)1000000, 0);
 
@@ -1004,7 +1028,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             L"BUTTON",
             L"Convert and Import!",  // Button text 
             WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON | BS_CENTER,
-            rcClient.right - 20 - buttonWidth*2,  // x position 
+            rcClient.right - 20 - buttonWidth * 2,  // x position 
             rcClient.bottom - (buttonHeight + 5),  // y position 
             buttonWidth * 2,  // Button width
             buttonHeight,  // Button height
@@ -1052,9 +1076,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         // Bottom buttons
         hEdit = GetDlgItem(hWnd, IDC_BUTTON_CONVERT_AND_IMPORT);
         SetWindowPos(hEdit, NULL,
-            rcClient.right - 20 - buttonWidth*2,   // x start
+            rcClient.right - 20 - buttonWidth * 2,   // x start
             rcClient.bottom - (buttonHeight + 5),  // y start
-            buttonWidth*2,   // width
+            buttonWidth * 2,   // width
             buttonHeight,  // height
             SWP_NOZORDER);
 
@@ -1079,7 +1103,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND: {
         // A Menu Item was selected
         switch (LOWORD(wParam)) {
-        case ID_FILE_OPEN: 
+        case ID_FILE_OPEN:
         case IDC_BUTTON_OPEN: {
             filename = OpenFileWindow();
             if (filename != L"") {
@@ -1114,14 +1138,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         case ID_HELP_ABOUT: {
-            std::wstring aboutUrl = 
-                L"http://www.norcalico.com/ConvertToOFX/about/" + 
+            std::wstring aboutUrl =
+                L"http://www.norcalico.com/ConvertToOFX/about/" +
                 VERSION_ID + L".html";
-            std::wstring msg = 
-            L"ConvertToOFX Version: " + VERSION_ID + L"\n\n"
-            L"This program uses the TinyXML-2 project (zlib License) \n\n"
-            L"A web browser will now open to show more information: " +
-            aboutUrl;
+            std::wstring msg =
+                L"ConvertToOFX Version: " + VERSION_ID + L"\n\n"
+                L"This program uses the TinyXML-2 project (zlib License) \n\n"
+                L"A web browser will now open to show more information: " +
+                aboutUrl;
             MessageBox(hWnd, msg.c_str(), _T("About"), MB_OK);
             ShellExecute(NULL,
                 L"open",
@@ -1144,8 +1168,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             MessageBox(hWnd, privacyMessage, _T("Privacy Notice"), MB_OK);
             break;
         }
-        case ID_ACTIONS_CHANGE_IMPORT_HANDLER_LOCATION: {
+        case ID_CONFIG_CHANGE_IMPORT_HANDLER_LOCATION: {
             ChangeImportHandlerLocation(hWnd);
+            break;
+        }
+        case ID_CONFIG_DEDUPE_MEMO: {
+            HMENU mainMenu = GetMenu(hWnd);
+            HMENU configSubMenu = GetSubMenu(mainMenu, 2);
+            if (dedupeMemoField) {
+                // Option was previously selected, so disable it
+                CheckMenuItem(configSubMenu, 
+                              ID_CONFIG_DEDUPE_MEMO,
+                              MF_UNCHECKED);
+                dedupeMemoField = false;
+            }
+            else {
+                // Option was previously unselected, so enable it
+                CheckMenuItem(configSubMenu,
+                              ID_CONFIG_DEDUPE_MEMO,
+                              MF_CHECKED);
+                dedupeMemoField = true;
+            }
             break;
         }
         default:
@@ -1260,11 +1303,11 @@ int CALLBACK WinMain(
     HCRYPTPROV hCryptProv;
     HCRYPTHASH hHash;
     if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL,
-                            CRYPT_VERIFYCONTEXT | CRYPT_MACHINE_KEYSET)) {
+        CRYPT_VERIFYCONTEXT | CRYPT_MACHINE_KEYSET)) {
         if (CryptCreateHash(hCryptProv, CALG_MD5, 0, 0, &hHash)) {
-            if (CryptHashData(hHash, (const BYTE*) buffer, len, 0)) {
-                CryptGetHashParam(hHash, HP_HASHVAL, hashedComputerName, 
-                                  &hashedLength, 0);
+            if (CryptHashData(hHash, (const BYTE*)buffer, len, 0)) {
+                CryptGetHashParam(hHash, HP_HASHVAL, hashedComputerName,
+                    &hashedLength, 0);
             }
         }
     }

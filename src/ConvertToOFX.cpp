@@ -51,7 +51,7 @@
 
 
 // Global variables
-std::wstring VERSION_ID = L"1";
+std::wstring VERSION_ID = L"2";
 static TCHAR szWindowClass[] = _T("ConvertToOFX");  // main window class name
 static TCHAR szTitle[] = _T("ConvertToOFX");
 const wchar_t INPUT_DEFAULT_TEXT[] =
@@ -75,8 +75,9 @@ const std::string XML_OFX_HEADER =
 "<?OFX OFXHEADER=\"200\" VERSION=\"202\" SECURITY=\"NONE\" "
 "OLDFILEUID=\"NONE\" NEWFILEUID=\"NONE\" ?>";
 // Allowed child elements under <STMTTRN> fields. Everything else gets deleted.
-const std::set<std::string> STMTTRN_WHITELIST{ "TRNTYPE", "DTPOSTED", "TRNAMT",
-    "FITID", "CHECKNUM", "NAME", "MEMO", "CCACCTTO", "DTUSER" };
+// Remember that order matters for this whitelist array and for Money!!!
+const std::vector<std::string> STMTTRN_WHITELIST{ "TRNTYPE", "DTPOSTED", 
+    "DTUSER", "TRNAMT", "FITID", "CHECKNUM", "NAME", "CCACCTTO", "MEMO", };
 // Where to find the <BANKTRANLIST> for a Message Set Type 
 std::map<std::string, std::vector<std::string>> TYPE_TO_BANKTRANLIST_MAP = {
     {"CREDITCARDMSGSRSV1",
@@ -229,14 +230,17 @@ std::string FixXML(const std::string& input) {
     return fixedXML;
 }
 
-// Remove any STMTTRN child elements that are not whitelisted. 
+// Remove any extra STMTTRN child elements. Order elements correctly.
 void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
     // We need to prune extra elements because they can cause MS Money to 
-    // reject the file. This increases our chances of success.
+    // reject the file. This increases our chances of success. They also
+    // need to be in the correct order.
 
     // The <STMTTRN> is where all the magic and trouble happens.
-    // Extra elements under it will choke MS Money.
-    // Let's remove any extra elements that don't match a whitelist.
+    // Extra elements under it will choke MS Money. Also, so will
+    // out-of-order elements!
+    // Let's remove any extra elements that don't match a whitelist AND
+    // put it in order.
     /*
         Here's an example of a sanitized STMTTRN:
         <STMTTRN>
@@ -249,36 +253,109 @@ void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
           <MEMO>CHECK# 100 CHECK WITHDRAWAL</MEMO>
         </STMTTRN>
     */
-    // * Other possibly accepted child elements: <DTUSER>, <CCACCTTO>
-    // * TRNTYPE has been observed to be CHECK, DEBIT, CREDIT. Any others?
     // * I've observed STMTRN elements as children under the following:
     //   * <OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><BANKTRANLIST>
     //   * <OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
     //   * Are there others that I should care about?
     tinyxml2::XMLElement* stmttrn = banktranlist->FirstChildElement("STMTTRN");
-    while (stmttrn) {  // For every STMTTRN
-        tinyxml2::XMLNode* child = stmttrn->FirstChild();
-        while (child) {  // For every child element under STMTTRN
-            tinyxml2::XMLNode* currentChild = child;
-            child = child->NextSibling();
-            if (STMTTRN_WHITELIST.find(currentChild->Value()) ==
-                STMTTRN_WHITELIST.end()) {
-                stmttrn->DeleteChild(currentChild);
-            }
-        }
+    while (stmttrn) {  // For every STMTTRN element
+        tinyxml2::XMLElement* current_stmttrn = stmttrn;
+        // Get pointer to next element first, since doing it at the end
+        // (after all our modifications) means NextSiblingElement is NULL.
+        stmttrn = stmttrn->NextSiblingElement("STMTTRN");
+        tinyxml2::XMLElement* ordered_stmttrn = 
+            banktranlist->GetDocument()->NewElement("STMTTRN");
 
+        // Cleanup: De-dupe (aka Delete) MEMO field if it is identical to NAME
         if (dedupeMemoField) {
             // If <NAME> == <MEMO>, then delete MEMO field.
             // Personally, I hate when this gets duplicated. Waste of space!
-            tinyxml2::XMLElement* name = stmttrn->FirstChildElement("NAME");
-            tinyxml2::XMLElement* memo = stmttrn->FirstChildElement("MEMO");
-            if (name && memo && name->GetText() && memo->GetText() && 
+            tinyxml2::XMLElement* name = 
+                current_stmttrn->FirstChildElement("NAME");
+            tinyxml2::XMLElement* memo = 
+                current_stmttrn->FirstChildElement("MEMO");
+            if (name && memo && name->GetText() && memo->GetText() &&
                 (strcmp(name->GetText(), memo->GetText()) == 0)) {
-                stmttrn->DeleteChild(memo);
+                current_stmttrn->DeleteChild(memo);
             }
         }
 
-        stmttrn = stmttrn->NextSiblingElement("STMTTRN");
+        for (unsigned int i = 0; i < STMTTRN_WHITELIST.size(); ++i) {
+            // Go through the whitelist, which is in correct order, and build
+            // a new STMTTRN element in that order
+            tinyxml2::XMLElement* child =
+                current_stmttrn->FirstChildElement(
+                    STMTTRN_WHITELIST[i].c_str());
+
+            // If Child is an empty value, skip it
+            if (child && child->GetText() == NULL) {
+                continue;
+            }
+
+            // Special Case 1: If no <NAME>, check if <PAYEE> and use that. 
+            // But, delete <PAYEE> if both elements are present.
+            if (STMTTRN_WHITELIST[i] == "NAME") {
+                tinyxml2::XMLElement* payee = 
+                    current_stmttrn->FirstChildElement("PAYEE");
+                if (!child) {
+                    // No <NAME>, so use PAYEE if it is present
+                    if (payee) {
+                        ordered_stmttrn->InsertEndChild(payee);
+                    }
+                    else {
+                        // Didn't find NAME or PAYEE. No problem, not required!
+                    }
+                }
+                else {
+                    // Since <NAME> exists, make sure PAYEE does not.
+                    if (payee) {
+                        banktranlist->GetDocument()->DeleteNode(payee);
+                    }
+                    ordered_stmttrn->InsertEndChild(child);
+                }
+                continue;
+            }
+            // Special Case 2: If no <CCACCTTO>, check <BANKACCTTO>.
+            // But, delete <BANKACCTTO> if both present.
+            if (STMTTRN_WHITELIST[i] == "CCACCTTO") {
+                tinyxml2::XMLElement* bankacctto =
+                    current_stmttrn->FirstChildElement("BANKACCTTO");
+                if (!child) {
+                    // No <CCACCTTO>, so use BANKACCTTO if present
+                    if (bankacctto) {
+                        ordered_stmttrn->InsertEndChild(bankacctto);
+                    }
+                    else {
+                        // Did not find CCACCT or BANKACCTTO.
+                        // No problem, it's not required anyways
+                    }
+                }
+                else {
+                    // Since <CCACCTTO> exists, make sure BANKACCTTO does not.
+                    // Presence of both will cause issues.
+                    if (bankacctto) {
+                        banktranlist->GetDocument()->DeleteNode(bankacctto);
+                    }
+                    ordered_stmttrn->InsertEndChild(child);
+                }
+                continue;
+            }
+
+            if (child) {
+                ordered_stmttrn->InsertEndChild(child);
+            }
+        }
+
+        // I want to preserve the order of the STMTTRN element, so leave it in
+        // place and replace the children with the in-order children. 
+        // Otherwise, I could have just inserted ordered_stmttrn.
+        current_stmttrn->DeleteChildren();
+        tinyxml2::XMLNode* child = ordered_stmttrn->FirstChild();
+        while (child) {
+            current_stmttrn->InsertEndChild(child);
+            child = ordered_stmttrn->FirstChild();
+        }
+        banktranlist->GetDocument()->DeleteNode(ordered_stmttrn);
     }
 }
 

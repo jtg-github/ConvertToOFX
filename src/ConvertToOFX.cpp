@@ -311,6 +311,7 @@ void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
                     if (payee) {
                         banktranlist->GetDocument()->DeleteNode(payee);
                     }
+                    ordered_stmttrn->InsertEndChild(child);
                 }
                 continue;
             }
@@ -335,6 +336,7 @@ void PruneSTMTTRN(tinyxml2::XMLElement* banktranlist) {
                     if (bankacctto) {
                         banktranlist->GetDocument()->DeleteNode(bankacctto);
                     }
+                    ordered_stmttrn->InsertEndChild(child);
                 }
                 continue;
             }

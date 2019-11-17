@@ -43,6 +43,7 @@
 #define ID_HELP_PRIVACY_NOTICE 7
 #define ID_CONFIG_CHANGE_IMPORT_HANDLER_LOCATION 8
 #define ID_CONFIG_DEDUPE_MEMO 9
+#define ID_CONFIG_TRIM_LINES 10
 
 #define IDC_MAIN_EDIT 101
 #define IDC_OFX_EDIT 102
@@ -51,7 +52,7 @@
 
 
 // Global variables
-std::wstring VERSION_ID = L"2";
+std::wstring VERSION_ID = L"3";
 static TCHAR szWindowClass[] = _T("ConvertToOFX");  // main window class name
 static TCHAR szTitle[] = _T("ConvertToOFX");
 const wchar_t INPUT_DEFAULT_TEXT[] =
@@ -86,6 +87,7 @@ std::map<std::string, std::vector<std::string>> TYPE_TO_BANKTRANLIST_MAP = {
         {"OFX", "BANKMSGSRSV1",       "STMTTRNRS",   "STMTRS",   "BANKTRANLIST"}},
 };
 bool dedupeMemoField = true;
+bool trimLines = true;
 
 // Attempt to fix the imbalanced input into well-formatted XML.
 std::string FixXML(const std::string& input) {
@@ -486,7 +488,40 @@ bool ConvertInputToOFX(HWND hWnd) {
     }
     // Now append the rest
     while (std::getline(ss, line)) {
-        polishedText += line + "\n";
+        if (trimLines) {
+            // Some banks include a ton of space and new lines.
+            // Let's trim the excess space on both sides of the line.
+            // Left-trim the spaces of the line.
+            int i = 0;
+            while (std::isspace(line[i])) {
+                ++i;
+            }
+            line = line.substr(i);
+
+            // Right-trim the line.
+            int charsToRTrim = 0;
+            for (int i = line.length() - 1; i > 0; --i) {
+                if (std::isspace(line[i])) {
+                    ++charsToRTrim;
+                }
+                else {
+                    break;
+                }
+            }
+            if (charsToRTrim > 0) {
+                line = line.substr(0, line.length() - charsToRTrim);
+            }
+        }
+
+        // If the line ends with ">", don't add a new line.
+        if (line.length() > 1 && line[line.length() - 1] == '>') {
+            polishedText += line;
+        }
+        else {
+            //New-line just helps me debug later. XML Parser does all
+            //the nice formatting.
+            polishedText += line + "\n";
+        }
     }
 
     // Add OFX XML-style headers. Version may be wrong, but Money doesn't care.
@@ -708,6 +743,10 @@ void CreateMainMenu(HWND hWnd) {
         MF_STRING,
         ID_CONFIG_DEDUPE_MEMO,
         _T("&Delete the MEMO field if identical to NAME field"));
+    AppendMenu(hConfigSubMenu,
+        MF_STRING,
+        ID_CONFIG_TRIM_LINES,
+        _T("&Trim the left and right sides of each line"));
 
     AppendMenu(hHelpSubMenu, MF_STRING, ID_HELP_ONLINE,
         _T("On-Line &Documentation"));
@@ -718,6 +757,9 @@ void CreateMainMenu(HWND hWnd) {
 
     if (dedupeMemoField) {
         CheckMenuItem(hConfigSubMenu, ID_CONFIG_DEDUPE_MEMO, MF_CHECKED);
+    }
+    if (trimLines) {
+        CheckMenuItem(hConfigSubMenu, ID_CONFIG_TRIM_LINES, MF_CHECKED);
     }
     SetMenu(hWnd, hMenu);
 }
@@ -1241,6 +1283,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             break;
         }
+        case ID_CONFIG_TRIM_LINES: {
+            HMENU mainMenu = GetMenu(hWnd);
+            HMENU configSubMenu = GetSubMenu(mainMenu, 2);
+            if (trimLines) {
+                // Option was previously selected, so disable it
+                CheckMenuItem(configSubMenu,
+                    ID_CONFIG_TRIM_LINES,
+                    MF_UNCHECKED);
+                trimLines = false;
+            }
+            else {
+                // Option was previously unselected, so enable it
+                CheckMenuItem(configSubMenu,
+                    ID_CONFIG_TRIM_LINES,
+                    MF_CHECKED);
+                trimLines = true;
+            }
+            break;
+        }
         default:
             break;
         }
@@ -1413,3 +1474,4 @@ int CALLBACK WinMain(
 
     return (int)msg.wParam;
 }
+

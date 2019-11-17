@@ -1,5 +1,5 @@
 # ConvertToOFX
-* Version: 2
+* Version: 3
 * Website: http://www.norcalico.com/ConvertToOFX/
 * Source Code: https://github.com/jtg-github/ConvertToOFX
 

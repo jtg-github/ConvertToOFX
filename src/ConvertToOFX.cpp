@@ -52,7 +52,7 @@
 
 
 // Global variables
-std::wstring VERSION_ID = L"3";
+std::wstring VERSION_ID = L"4";
 static TCHAR szWindowClass[] = _T("ConvertToOFX");  // main window class name
 static TCHAR szTitle[] = _T("ConvertToOFX");
 const wchar_t INPUT_DEFAULT_TEXT[] =
@@ -612,6 +612,11 @@ bool ConvertInputToOFX(HWND hWnd) {
         // We have a Bank Statement
         statementTypes.push_back("BANKMSGSRSV1");
     }
+    if (docHandle.FirstChildElement("OFX").
+        FirstChildElement("INVSTMTMSGSRSV1").ToElement()) {
+        // We have a Bank Statement
+        statementTypes.push_back("INVSTMTMSGSRSV1");
+    }
 
     if (statementTypes.size() == 0) {
         // Error: Found zero statements
@@ -627,6 +632,11 @@ bool ConvertInputToOFX(HWND hWnd) {
     // Using the Statement Type as a key name, we lookup its expected 
     // <BANKTRANLIST> path from a map data structure.
     for (std::string& type : statementTypes) {
+        if (type == "INVSTMTMSGSRSV1") {
+            // Nothing to do yet for this type. Just pretty print the XML
+            // and add headers.
+            continue;
+        }
         std::vector<std::string> pathToBanktranlist =
             TYPE_TO_BANKTRANLIST_MAP[type];
         if (pathToBanktranlist.size() == 0) {
@@ -1474,4 +1484,3 @@ int CALLBACK WinMain(
 
     return (int)msg.wParam;
 }
-
